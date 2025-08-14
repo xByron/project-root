@@ -1,4 +1,5 @@
-import fetch from "node-fetch";
+// Vercel Node functions support global fetch on Node 18+
+// CommonJS export for maximum compatibility.
 
 const SKILLS = [
   "Overall","Attack","Defence","Strength","Hitpoints","Ranged","Prayer",
@@ -7,33 +8,37 @@ const SKILLS = [
   "Runecrafting","Hunter","Construction"
 ];
 
-export default async function handler(req, res) {
-  const { player } = req.query;
-  if (!player) {
-    return res.status(400).json({ error: "Missing 'player' query parameter" });
-  }
-
+module.exports = async (req, res) => {
   try {
+    const player = req.query.player;
+    if (!player) {
+      res.status(400).json({ error: "Missing 'player' query parameter" });
+      return;
+    }
+
     const url = `https://secure.runescape.com/m=hiscore_oldschool/index_lite.ws?player=${encodeURIComponent(player)}`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error("Failed to fetch highscores");
+    if (!response.ok) {
+      res.status(response.status).json({ error: `Highscores fetch failed (${response.status})` });
+      return;
+    }
 
     const text = await response.text();
     const lines = text.trim().split("\n");
 
-    const result = {};
-    SKILLS.forEach((skill, i) => {
-      const [rank, level, xp] = lines[i].split(",");
-      result[skill] = {
-        rank: parseInt(rank, 10),
-        level: parseInt(level, 10),
-        xp: parseInt(xp, 10)
-      };
-    });
+    const skills = {};
+    for (let i = 0; i < SKILLS.length; i++) {
+      const line = lines[i];
+      if (!line) break;
+      const [rank, level, xp] = line.split(",").map(Number);
+      skills[SKILLS[i]] = { rank, level, xp };
+    }
 
+    // CORS so your GPT can fetch it
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate");
-    res.status(200).json({ player, skills: result });
+    res.status(200).json({ player, skills });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Unknown server error" });
   }
-}
+};
